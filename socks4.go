@@ -3,35 +3,36 @@ package socks4
 import (
 	"encoding/binary"
 	"fmt"
-	"golang.org/x/net/proxy"
 	"io"
 	"net"
 	"net/url"
 	"strconv"
+
+	"golang.org/x/net/proxy"
 )
 
 const (
-	socks_version = 0x04
-	socks_connect = 0x01
-	socks_bind    = 0x02
+	socksVersion = 0x04
+	socksConnect = 0x01
+	socksBind    = 0x02
 
-	socks_ident = "nobody@0.0.0.0"
+	socksIdent = "nobody@0.0.0.0"
 
-	access_granted         = 0x5a
-	access_rejected        = 0x5b
-	access_identd_required = 0x5c
-	access_identd_failed   = 0x5d
-
-	ErrWrongURL      = "wrong server url"
-	ErrWrongConnType = "no support for connections of type"
-	ErrConnFailed    = "connection failed to socks4 server"
-	ErrHostUnknown   = "unable to find IP address of host"
-	ErrSocksServer   = "socks4 server error"
-	ErrConnRejected  = "connection rejected"
-	ErrIdentRequired = "socks4 server require valid identd"
+	accessGranted        = 0x5a
+	accessRejected       = 0x5b
+	accessIdentdRequired = 0x5c
+	accessIdentdFailed   = 0x5d
 )
 
-var ()
+var (
+	ErrWrongURL      = Error{"wrong server url", nil}
+	ErrWrongConnType = Error{"no support for connections of type", nil}
+	ErrConnFailed    = Error{"connection failed to socks4 server", nil}
+	ErrHostUnknown   = Error{"unable to find IP address of host", nil}
+	ErrSocksServer   = Error{"socks4 server error", nil}
+	ErrConnRejected  = Error{"connection rejected", nil}
+	ErrIdentRequired = Error{"socks4 server require valid identd", nil}
+)
 
 func init() {
 	proxy.RegisterDialerType("socks4", func(u *url.URL, d proxy.Dialer) (proxy.Dialer, error) {
@@ -39,21 +40,31 @@ func init() {
 	})
 }
 
-type socks4Error struct {
-	message string
-	details interface{}
+// Error is custom error type for better error handling
+type Error struct {
+	msg string
+	err error
 }
 
-func (s *socks4Error) String() string {
-	return s.message
+// Wrap wraps an error to custom error type and returns copy
+func (e Error) Wrap(err error) Error {
+	e.err = err
+	return e
 }
 
-func (s *socks4Error) Error() string {
-	if s.details == nil {
-		return s.message
-	}
+// Unwrap implements errors.Unwrap interface
+func (e Error) Unwrap() error {
+	return e.err
+}
 
-	return fmt.Sprintf("%s: %v", s.message, s.details)
+// Error implements error interface
+func (e Error) Error() string {
+	return fmt.Sprintf("%s %v", e.msg, e.err)
+}
+
+// Equal compares two custom errors if they same origin
+func (e Error) Equal(err Error) bool {
+	return e.msg == err.msg
 }
 
 type socks4 struct {
@@ -67,59 +78,64 @@ func (s *socks4) Dial(network, addr string) (c net.Conn, err error) {
 	switch network {
 	case "tcp", "tcp4":
 	default:
-		return nil, &socks4Error{message: ErrWrongConnType, details: network}
+		return nil, ErrWrongConnType.Wrap(err)
 	}
 
 	c, err = s.dialer.Dial(network, s.url.Host)
 	if err != nil {
-		return nil, &socks4Error{message: ErrConnFailed, details: err}
+		return nil, ErrConnFailed.Wrap(err)
 	}
 
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return nil, &socks4Error{message: ErrWrongURL, details: err}
+		return nil, ErrWrongURL.Wrap(err)
 	}
 
 	ip, err := net.ResolveIPAddr("ip4", host)
 	if err != nil {
-		return nil, &socks4Error{message: ErrHostUnknown, details: err}
+		return nil, ErrHostUnknown.Wrap(err)
 	}
+
 	ip4 := ip.IP.To4()
 
 	var bport [2]byte
 	iport, _ := strconv.Atoi(port)
 	binary.BigEndian.PutUint16(bport[:], uint16(iport))
 
-	buf = []byte{socks_version, socks_connect}
+	buf = []byte{socksVersion, socksConnect}
 	buf = append(buf, bport[:]...)
 	buf = append(buf, ip4...)
-	buf = append(buf, socks_ident...)
+	buf = append(buf, socksIdent...)
 	buf = append(buf, 0)
 
 	i, err := c.Write(buf)
 	if err != nil {
-		return nil, &socks4Error{message: ErrSocksServer, details: err}
+		return nil, ErrSocksServer.Wrap(err)
 	}
+
 	if l := len(buf); i != l {
-		return nil, &socks4Error{message: ErrSocksServer, details: fmt.Sprintf("write %d bytes, expected %d", i, l)}
+		return nil, ErrSocksServer.Wrap(fmt.Errorf("written %d bytes, expected %d", i, l))
 	}
 
 	var resp [8]byte
 	i, err = c.Read(resp[:])
 	if err != nil && err != io.EOF {
-		return nil, &socks4Error{message: ErrSocksServer, details: err}
+		return nil, ErrSocksServer.Wrap(err)
 	}
+
 	if i != 8 {
-		return nil, &socks4Error{message: ErrSocksServer, details: fmt.Sprintf("read %d bytes, expected 8", i)}
+		return nil, ErrSocksServer.Wrap(fmt.Errorf("read %d bytes, expected 8", i))
 	}
 
 	switch resp[1] {
-	case access_granted:
+	case accessGranted:
 		return c, nil
-	case access_identd_required, access_identd_failed:
-		return nil, &socks4Error{message: ErrIdentRequired, details: strconv.FormatInt(int64(resp[1]), 16)}
+
+	case accessIdentdRequired, accessIdentdFailed:
+		return nil, ErrIdentRequired.Wrap(fmt.Errorf(strconv.FormatInt(int64(resp[1]), 16)))
+
 	default:
 		c.Close()
-		return nil, &socks4Error{message: ErrConnRejected, details: strconv.FormatInt(int64(resp[1]), 16)}
+		return nil, ErrConnRejected.Wrap(fmt.Errorf(strconv.FormatInt(int64(resp[1]), 16)))
 	}
 }
