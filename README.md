@@ -2,16 +2,30 @@
 Socks4 implementation for Go, compatible with net/proxy
 
 ## Usage
+
 ```go
+package main
+
 import (
+	"errors"
+	"net/url"
+
 	"golang.org/x/net/proxy"
-	_ "github.com/Bogdan-D/go-socks4"
+	"github.com/Bogdan-D/go-socks4"
 )
 
 func main() {
-	dialer, err := proxy.FromURL("socks4://ip:port",proxy.Direct)
+	addr, _ := url.Parse("socks4://ip:port")
+	
+	var socksErr socks4.Error
+
+	dialer, err := proxy.FromURL(addr, proxy.Direct)
 	// check error
-	// and use your dialer as you with
+	// and use your dialer as you with 
+	c, err := dialer.Dial("tcp", "google.com:80")
+	if err != nil && errors.As(err, &socksErr) {
+		// handle error
+	}
 }
 ```
 
@@ -19,7 +33,7 @@ func main() {
 ## Tests
 If you know proxy server to connect to tests should be running like this
 `
-go test -socks4.address=localhost:8080
+go test -socks4.url=socks4://localhost:8080
 `
 
 
