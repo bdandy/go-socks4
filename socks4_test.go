@@ -35,18 +35,14 @@ func TestDial(t *testing.T) {
 	}
 
 	c, err := socks.Dial("tcp", "google.com:80")
-	defer c.Close()
 
-	var socksErr socks4.Error
-	if err != nil && errors.As(err, &socksErr) {
-		switch {
-		case socksErr.Equal(socks4.ErrIdentRequired):
-		default:
-			t.Error(err)
-		}
-	} else if err != nil {
+	// skip ErrIdentRequired error type
+	if err != nil && !errors.Is(err, socks4.ErrIdentRequired) {
 		t.Error(err)
+		return
 	}
+
+	defer c.Close()
 
 	_, err = c.Write([]byte("GET /\n"))
 	if err != nil {
@@ -54,6 +50,6 @@ func TestDial(t *testing.T) {
 	}
 
 	buf := bufio.NewReader(c)
-	line, err := buf.ReadString('\n')
+	line, _ := buf.ReadString('\n')
 	fmt.Print(line)
 }
