@@ -27,14 +27,14 @@ const (
 )
 
 const (
-	ErrWrongURL      = typedErrors.String("wrong server url: %s")
 	ErrWrongConnType = typedErrors.String("no support for connections of type")
-	ErrDialFailed    = typedErrors.String("socks4 server dial error")
+	ErrDialFailed    = typedErrors.String("socks4 dial")
+	ErrConnRejected  = typedErrors.String("connection to remote host was rejected")
+	ErrIdentRequired = typedErrors.String("valid ident required")
+	ErrIO            = typedErrors.String("i\\o error")
+	ErrWrongURL      = typedErrors.String("wrong server url: %s")
 	ErrHostUnknown   = typedErrors.String("unable to find IP address of host %s")
-	ErrConnRejected  = typedErrors.String("connection to remote host was rejected by socks4 server")
-	ErrIdentRequired = typedErrors.String("socks4 server require valid ident: %v")
-	ErrSocksServer   = typedErrors.String("socks4 server error")
-	ErrUnknown       = typedErrors.String("unknown socks4 server response")
+	ErrUnknown       = typedErrors.String("unknown socks4 server response %v")
 )
 
 var Ident = "nobody@0.0.0.0"
@@ -63,15 +63,25 @@ func (s socks4) lookupAddr(host string) (net.IP, error) {
 	return ip.IP.To4(), err
 }
 
-func (s socks4) request(host string, port int) ([]byte, error) {
-	var buf bytes.Buffer
+func (s socks4) prepareRequest(addr string) ([]byte, error) {
+	var (
+		buf bytes.Buffer
+		err error
+	)
+
+	host, port, err := s.parseAddr(addr)
 
 	buf.Write([]byte{socksVersion, socksConnect})
 	_ = binary.Write(&buf, binary.BigEndian, uint16(port))
 
-	ip, err := s.lookupAddr(host)
-	if err != nil {
-		return nil, err
+	// socks4a defines IP as 0.0.0.x
+	var ip = net.IPv4(0, 0, 0, 1)
+
+	if !s.isSocks4a() {
+		ip, err = s.lookupAddr(host)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	_ = binary.Write(&buf, binary.BigEndian, ip)
@@ -79,21 +89,31 @@ func (s socks4) request(host string, port int) ([]byte, error) {
 
 	buf.WriteByte(0)
 
+	if s.isSocks4a() {
+		buf.WriteString(host)
+		buf.WriteByte(0)
+	}
+
 	return buf.Bytes(), nil
 }
 
-func (s socks4) requestSocks4a(host string, port int) []byte {
-	var buf bytes.Buffer
+func (s socks4) isSocks4a() bool {
+	return s.url.Scheme == "socks4a"
+}
 
-	buf.Write([]byte{socksVersion, socksConnect})
-	_ = binary.Write(&buf, binary.BigEndian, uint16(port))
-	buf.Write([]byte{0, 0, 0, 1})
-	buf.WriteString(Ident)
-	buf.WriteString(host)
+func (s socks4) parseAddr(addr string) (host string, iport int, err error) {
+	var port string
+	host, port, err = net.SplitHostPort(addr)
+	if err != nil {
+		return "", 0, ErrWrongURL.WithArgs(addr).Wrap(err)
+	}
 
-	buf.WriteByte(0)
+	iport, err = strconv.Atoi(port)
+	if err != nil {
+		return "", 0, ErrWrongURL.WithArgs(addr).Wrap(err)
+	}
 
-	return buf.Bytes()
+	return
 }
 
 func (s socks4) Dial(network, addr string) (c net.Conn, err error) {
@@ -105,55 +125,39 @@ func (s socks4) Dial(network, addr string) (c net.Conn, err error) {
 	if err != nil {
 		return nil, ErrDialFailed.Wrap(err)
 	}
+	// close connection later if we got an error
 	defer func() {
 		if err != nil {
 			_ = c.Close()
 		}
 	}()
 
-	host, port, err := net.SplitHostPort(addr)
+	req, err := s.prepareRequest(addr)
 	if err != nil {
-		return c, ErrWrongURL.WithArgs(addr).Wrap(err)
-	}
-
-	iport, err := strconv.Atoi(port)
-	if err != nil {
-		return c, ErrWrongURL.WithArgs(addr).Wrap(err)
-	}
-
-	var req []byte
-	if s.url.Scheme == "socks4a" {
-		req = s.requestSocks4a(host, iport)
-	} else {
-		req, err = s.request(host, iport)
-		if err != nil {
-			return c, err
-		}
+		return c, err
 	}
 
 	var i int
 	i, err = c.Write(req)
-	switch {
-	case err != nil:
-		return c, ErrSocksServer.Wrap(err)
-	case i < minRequestLen:
-		return c, ErrSocksServer.Wrap(io.ErrShortWrite)
+	if err != nil {
+		return c, ErrIO.Wrap(err)
+	} else if i < minRequestLen {
+		return c, ErrIO.Wrap(io.ErrShortWrite)
 	}
 
 	var resp [8]byte
 	i, err = c.Read(resp[:])
-	switch {
-	case err != nil && err != io.EOF:
-		return c, ErrSocksServer.Wrap(err)
-	case i != 8:
-		return c, ErrSocksServer.Wrap(io.ErrUnexpectedEOF)
+	if err != nil && err != io.EOF {
+		return c, ErrIO.Wrap(err)
+	} else if i != 8 {
+		return c, ErrIO.Wrap(io.ErrUnexpectedEOF)
 	}
 
 	switch resp[1] {
 	case accessGranted:
 		return c, nil
 	case accessIdentRequired, accessIdentFailed:
-		return c, ErrIdentRequired.WithArgs(resp[1])
+		return c, ErrIdentRequired
 	case accessRejected:
 		return c, ErrConnRejected
 	default:
