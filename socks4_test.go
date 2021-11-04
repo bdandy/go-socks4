@@ -2,7 +2,6 @@ package socks4_test
 
 import (
 	"bufio"
-	"errors"
 	"flag"
 	"fmt"
 	"net/url"
@@ -35,10 +34,10 @@ func TestDial(t *testing.T) {
 	}
 
 	c, err := socks.Dial("tcp", "google.com:80")
-
-	// skip ErrIdentRequired error type
-	if err != nil && !errors.Is(err, socks4.ErrIdentRequired) {
-		t.Error(err)
+	if err != nil {
+		if socksErr, ok := err.(socks4.Error); ok {
+			t.Error(socksErr)
+		}
 		return
 	}
 

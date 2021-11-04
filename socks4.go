@@ -51,6 +51,8 @@ func init() {
 	})
 }
 
+type Error = typedErrors.TypedError
+
 type socks4 struct {
 	url    *url.URL
 	dialer proxy.Dialer
@@ -59,12 +61,12 @@ type socks4 struct {
 // Dial implements proxy.Dialer interface
 func (s socks4) Dial(network, addr string) (c net.Conn, err error) {
 	if network != "tcp" && network != "tcp4" {
-		return nil, ErrWrongNetwork
+		return nil, ErrWrongNetwork.New()
 	}
 
 	c, err = s.dialer.Dial(network, s.url.Host)
 	if err != nil {
-		return nil, ErrDialFailed.Wrap(err)
+		return nil, ErrDialFailed.New().Wrap(err)
 	}
 	// close connection later if we got an error
 	defer func() {
@@ -81,17 +83,17 @@ func (s socks4) Dial(network, addr string) (c net.Conn, err error) {
 	var i int
 	i, err = c.Write(req)
 	if err != nil {
-		return c, ErrIO.Wrap(err)
+		return c, ErrIO.New().Wrap(err)
 	} else if i < minRequestLen {
-		return c, ErrIO.Wrap(io.ErrShortWrite)
+		return c, ErrIO.New().Wrap(io.ErrShortWrite)
 	}
 
 	var resp [8]byte
 	i, err = c.Read(resp[:])
 	if err != nil && err != io.EOF {
-		return c, ErrIO.Wrap(err)
+		return c, ErrIO.New().Wrap(err)
 	} else if i != 8 {
-		return c, ErrIO.Wrap(io.ErrUnexpectedEOF)
+		return c, ErrIO.New().Wrap(io.ErrUnexpectedEOF)
 	}
 
 	switch resp[1] {
@@ -102,14 +104,14 @@ func (s socks4) Dial(network, addr string) (c net.Conn, err error) {
 	case accessRejected:
 		return c, ErrConnRejected
 	default:
-		return c, ErrInvalidResponse.WithArgs(resp[1])
+		return c, ErrInvalidResponse.NewWithArgs(resp[1])
 	}
 }
 
 func (s socks4) lookupAddr(host string) (net.IP, error) {
 	ip, err := net.ResolveIPAddr("ip4", host)
 	if err != nil {
-		return net.IP{}, ErrHostUnknown.WithArgs(host).Wrap(err)
+		return net.IP{}, ErrHostUnknown.NewWithArgs(host).Wrap(err)
 	}
 
 	return ip.IP.To4(), err
@@ -157,12 +159,12 @@ func (s socks4) parseAddr(addr string) (host string, iport int, err error) {
 	var port string
 	host, port, err = net.SplitHostPort(addr)
 	if err != nil {
-		return "", 0, ErrWrongAddr.WithArgs(addr).Wrap(err)
+		return "", 0, ErrWrongAddr.NewWithArgs(addr).Wrap(err)
 	}
 
 	iport, err = strconv.Atoi(port)
 	if err != nil {
-		return "", 0, ErrWrongAddr.WithArgs(addr).Wrap(err)
+		return "", 0, ErrWrongAddr.NewWithArgs(addr).Wrap(err)
 	}
 
 	return
