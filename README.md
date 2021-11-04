@@ -1,11 +1,12 @@
 # go-socks4
-Socks4 implementation for Go, compatible with net/proxy
+Socks4 implementation for Go, compatible with net/proxy. 
 
 ## Features
 - `socks4` 
 - `socks4a`
 
 ## Usage
+Just import `_ "github.com/Bogdan-D/go-socks4"` to add `socks4` support
 
 ```go
 package main
@@ -15,7 +16,7 @@ import (
 	"log"
 	"net/url"
 
-	"github.com/Bogdan-D/go-socks4"
+	_ "github.com/Bogdan-D/go-socks4"
 	"golang.org/x/net/proxy"
 )
 

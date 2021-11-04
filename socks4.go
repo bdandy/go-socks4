@@ -1,5 +1,6 @@
 // Package socks4 implements socks4 and socks4a support for net/proxy
-package socks4 // import "github.com/Bogdan-D/go-socks4"
+// Just import `_ "github.com/Bogdan-D/go-socks4"` to add `socks4` support
+package socks4 // import _ "github.com/Bogdan-D/go-socks4"
 
 import (
 	"bytes"
