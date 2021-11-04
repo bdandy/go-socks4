@@ -1,4 +1,5 @@
-package socks4
+// Package socks4 implements socks4 and socks4a support for net/proxy
+package socks4 // import "github.com/Bogdan-D/go-socks4"
 
 import (
 	"bytes"
@@ -27,14 +28,14 @@ const (
 )
 
 const (
-	ErrWrongConnType = typedErrors.String("no support for connections of type")
-	ErrDialFailed    = typedErrors.String("socks4 dial")
-	ErrConnRejected  = typedErrors.String("connection to remote host was rejected")
-	ErrIdentRequired = typedErrors.String("valid ident required")
-	ErrIO            = typedErrors.String("i\\o error")
-	ErrWrongURL      = typedErrors.String("wrong server url: %s")
-	ErrHostUnknown   = typedErrors.String("unable to find IP address of host %s")
-	ErrUnknown       = typedErrors.String("unknown socks4 server response %v")
+	ErrWrongNetwork    = typedErrors.String("network should be tcp or tcp4")          // socks4 protocol supports only tcp/ip v4 connections
+	ErrDialFailed      = typedErrors.String("socks4 dial")                            // connection to socks4 server failed
+	ErrWrongAddr       = typedErrors.String("wrong addr: %s")                         // provided addr should be in format host:port
+	ErrConnRejected    = typedErrors.String("connection to remote host was rejected") // connection was rejected by proxy
+	ErrIdentRequired   = typedErrors.String("valid ident required")                   // proxy requires valid ident. Check Ident variable
+	ErrIO              = typedErrors.String("i\\o error")                             // some network i\o error happened
+	ErrHostUnknown     = typedErrors.String("unable to find IP address of host %s")   // host dns resolving failed
+	ErrInvalidResponse = typedErrors.String("unknown socks4 server response %v")      // proxy reply contains invalid data
 )
 
 var Ident = "nobody@0.0.0.0"
@@ -52,6 +53,56 @@ func init() {
 type socks4 struct {
 	url    *url.URL
 	dialer proxy.Dialer
+}
+
+// Dial implements proxy.Dialer interface
+func (s socks4) Dial(network, addr string) (c net.Conn, err error) {
+	if network != "tcp" && network != "tcp4" {
+		return nil, ErrWrongNetwork
+	}
+
+	c, err = s.dialer.Dial(network, s.url.Host)
+	if err != nil {
+		return nil, ErrDialFailed.Wrap(err)
+	}
+	// close connection later if we got an error
+	defer func() {
+		if err != nil {
+			_ = c.Close()
+		}
+	}()
+
+	req, err := s.prepareRequest(addr)
+	if err != nil {
+		return c, err
+	}
+
+	var i int
+	i, err = c.Write(req)
+	if err != nil {
+		return c, ErrIO.Wrap(err)
+	} else if i < minRequestLen {
+		return c, ErrIO.Wrap(io.ErrShortWrite)
+	}
+
+	var resp [8]byte
+	i, err = c.Read(resp[:])
+	if err != nil && err != io.EOF {
+		return c, ErrIO.Wrap(err)
+	} else if i != 8 {
+		return c, ErrIO.Wrap(io.ErrUnexpectedEOF)
+	}
+
+	switch resp[1] {
+	case accessGranted:
+		return c, nil
+	case accessIdentRequired, accessIdentFailed:
+		return c, ErrIdentRequired
+	case accessRejected:
+		return c, ErrConnRejected
+	default:
+		return c, ErrInvalidResponse.WithArgs(resp[1])
+	}
 }
 
 func (s socks4) lookupAddr(host string) (net.IP, error) {
@@ -105,62 +156,13 @@ func (s socks4) parseAddr(addr string) (host string, iport int, err error) {
 	var port string
 	host, port, err = net.SplitHostPort(addr)
 	if err != nil {
-		return "", 0, ErrWrongURL.WithArgs(addr).Wrap(err)
+		return "", 0, ErrWrongAddr.WithArgs(addr).Wrap(err)
 	}
 
 	iport, err = strconv.Atoi(port)
 	if err != nil {
-		return "", 0, ErrWrongURL.WithArgs(addr).Wrap(err)
+		return "", 0, ErrWrongAddr.WithArgs(addr).Wrap(err)
 	}
 
 	return
-}
-
-func (s socks4) Dial(network, addr string) (c net.Conn, err error) {
-	if network != "tcp" && network != "tcp4" {
-		return nil, ErrWrongConnType
-	}
-
-	c, err = s.dialer.Dial(network, s.url.Host)
-	if err != nil {
-		return nil, ErrDialFailed.Wrap(err)
-	}
-	// close connection later if we got an error
-	defer func() {
-		if err != nil {
-			_ = c.Close()
-		}
-	}()
-
-	req, err := s.prepareRequest(addr)
-	if err != nil {
-		return c, err
-	}
-
-	var i int
-	i, err = c.Write(req)
-	if err != nil {
-		return c, ErrIO.Wrap(err)
-	} else if i < minRequestLen {
-		return c, ErrIO.Wrap(io.ErrShortWrite)
-	}
-
-	var resp [8]byte
-	i, err = c.Read(resp[:])
-	if err != nil && err != io.EOF {
-		return c, ErrIO.Wrap(err)
-	} else if i != 8 {
-		return c, ErrIO.Wrap(io.ErrUnexpectedEOF)
-	}
-
-	switch resp[1] {
-	case accessGranted:
-		return c, nil
-	case accessIdentRequired, accessIdentFailed:
-		return c, ErrIdentRequired
-	case accessRejected:
-		return c, ErrConnRejected
-	default:
-		return c, ErrUnknown.WithArgs(resp[1])
-	}
 }
