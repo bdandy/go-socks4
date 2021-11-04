@@ -84,7 +84,7 @@ func (s socks4) prepareRequest(addr string) ([]byte, error) {
 		}
 	}
 
-	_ = binary.Write(&buf, binary.BigEndian, ip)
+	_ = binary.Write(&buf, binary.BigEndian, ip.To4())
 	buf.WriteString(Ident)
 
 	buf.WriteByte(0)
