@@ -1,6 +1,10 @@
 # go-socks4
 Socks4 implementation for Go, compatible with net/proxy
 
+## Features
+- `socks4` 
+- `socks4a`
+
 ## Usage
 
 ```go
