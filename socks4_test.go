@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/Bogdan-D/go-socks4"
+	"github.com/bdandy/go-socks4"
 
 	"golang.org/x/net/proxy"
 )
@@ -36,9 +36,9 @@ func TestDial(t *testing.T) {
 	c, err := socks.Dial("tcp", "google.com:80")
 	if err != nil {
 		if socksErr, ok := err.(socks4.Error); ok {
-			t.Error(socksErr)
+			t.Fatal(socksErr)
 		}
-		return
+		t.Fatal("unknown error", err)
 	}
 
 	defer c.Close()

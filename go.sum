@@ -1,5 +1,5 @@
-github.com/Bogdan-D/go-typed-errors v0.1.0 h1:5HwjKYrzCnCH64cZSuyy7bPqMQipsJVMNBFn2H/Ob58=
-github.com/Bogdan-D/go-typed-errors v0.1.0/go.mod h1:H9+KlSCXa3o3Z/VKASxtwae6dUyI32vNydmScdGMgwc=
+github.com/bdandy/go-typed-errors v1.2.0 h1:m6lGdc8ETF2YRp2yOOGVwOxV54MvK0TSq820BEGPA5I=
+github.com/bdandy/go-typed-errors v1.2.0/go.mod h1:PKxgp3AAd4mtJZWMyFsH7H1HNpknLXenQId/UA/SUqg=
 golang.org/x/net v0.0.0-20211101193420-4a448f8816b3 h1:VrJZAjbekhoRn7n5FBujY31gboH+iB3pdLxn3gE9FjU=
 golang.org/x/net v0.0.0-20211101193420-4a448f8816b3/go.mod h1:9nx3DQGgdP8bBQD5qxJ1jj9UTztislL4KSBs9R2vV5Y=
 golang.org/x/sys v0.0.0-20201119102817-f84b799fce68/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
