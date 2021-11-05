@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strconv"
 
-	errors "github.com/bdandy/go-typed-errors"
+	errors "github.com/bdandy/go-errors"
 	"golang.org/x/net/proxy"
 )
 
